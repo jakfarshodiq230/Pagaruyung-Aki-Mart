@@ -80,6 +80,47 @@ export function FakturModal({ isOpen, onClose, sale, autoPrint = false }: Faktur
     ? 'fixed left-[-9999px] top-0'
     : 'fixed inset-0 z-[100] flex items-center justify-center p-4 print:p-0 print:items-start'
 
+  let calculatedSubtotal = 0;
+  let calculatedDiscount = 0;
+  let totalItemDiscount = 0;
+
+  const displayItems = sale.sale_items?.map(item => {
+    const itemDiscount = (item.qty * item.harga_jual) - item.subtotal;
+    totalItemDiscount += itemDiscount;
+    
+    let displayHargaSatuan = item.harga_jual;
+    let displaySubtotal = item.qty * item.harga_jual;
+    
+    if (itemDiscount < 0) {
+      // Markup: fold into price
+      displayHargaSatuan = item.qty > 0 ? item.subtotal / item.qty : 0;
+      displaySubtotal = item.subtotal;
+    } else {
+      calculatedDiscount += itemDiscount;
+    }
+    calculatedSubtotal += displaySubtotal;
+    
+    return {
+      ...item,
+      displayHargaSatuan,
+      displaySubtotal
+    };
+  }) || [];
+
+  let subtotalAir = 0;
+  if (sale.include_air_aki && (sale.jumlah_air_aki ?? 0) > 0) {
+    const qtyAir = sale.jumlah_air_aki ?? 0;
+    subtotalAir = qtyAir * (sale.harga_jual_air_aki ?? sale.harga_air_aki ?? 0);
+    calculatedSubtotal += subtotalAir;
+  }
+
+  const globalDiscount = sale.discount - totalItemDiscount;
+  if (globalDiscount > 0) {
+    calculatedDiscount += globalDiscount;
+  } else if (globalDiscount < 0) {
+    calculatedSubtotal += Math.abs(globalDiscount);
+  }
+
   return (
     <>
       <style>{`
@@ -175,26 +216,24 @@ export function FakturModal({ isOpen, onClose, sale, autoPrint = false }: Faktur
                   </tr>
                 </thead>
                 <tbody>
-                  {sale.sale_items?.map((item, idx) => {
+                  {displayItems.map((item, idx) => {
                     const product = item.products
                     const name = product
                       ? product.kategori === 'Air Aki'
                         ? product.merk
                         : [product.merk, product.kategori, product.type, product.kode_baterai, `${product.kapasitas_ah}AH`].filter(Boolean).join(' ')
                       : 'Produk'
-                    const hargaSatuan = item.qty > 0 ? item.subtotal / item.qty : 0
                     return (
                       <tr key={idx}>
                         <td className="py-1.5 pr-2">{name}</td>
                         <td className="py-1.5 text-center">{item.qty}</td>
-                        <td className="py-1.5 text-right">{formatRupiah(hargaSatuan)}</td>
-                        <td className="py-1.5 text-right font-medium">{formatRupiah(item.subtotal)}</td>
+                        <td className="py-1.5 text-right">{formatRupiah(item.displayHargaSatuan)}</td>
+                        <td className="py-1.5 text-right font-medium">{formatRupiah(item.displaySubtotal)}</td>
                       </tr>
                     )
                   })}
                   {sale.include_air_aki && (sale.jumlah_air_aki ?? 0) > 0 && (() => {
                     const qtyAir = sale.jumlah_air_aki ?? 0
-                    const subtotalAir = qtyAir * (sale.harga_jual_air_aki ?? sale.harga_air_aki ?? 0)
                     const hargaSatuanAir = qtyAir > 0 ? subtotalAir / qtyAir : 0
                     return (
                       <tr>
@@ -215,12 +254,12 @@ export function FakturModal({ isOpen, onClose, sale, autoPrint = false }: Faktur
               <div className="space-y-1 text-xs print:text-[9pt]">
                 <div className="flex justify-between">
                   <span>Subtotal</span>
-                  <span>{formatRupiah(sale.subtotal)}</span>
+                  <span>{formatRupiah(calculatedSubtotal)}</span>
                 </div>
-                {sale.discount > 0 && (
+                {calculatedDiscount > 0 && (
                   <div className="flex justify-between">
                     <span>Diskon</span>
-                    <span>- {formatRupiah(sale.discount)}</span>
+                    <span>- {formatRupiah(calculatedDiscount)}</span>
                   </div>
                 )}
                 <div className="flex justify-between font-bold text-sm pt-1 border-t border-black print:text-[11pt]">

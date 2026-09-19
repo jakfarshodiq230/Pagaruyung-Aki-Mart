@@ -93,11 +93,12 @@ export async function GET(req: NextRequest) {
   const rows = (sales || []).map((s, i) => {
     totalTransaksi++
     totalPenjualan += s.total
-    totalDiskon += s.discount || 0
+    const trueDiscount = s.discount && s.discount > 0 ? s.discount : 0
+    totalDiskon += trueDiscount
     let qty = 0, laba = 0
     s.sale_items?.forEach((it: any) => { qty += it.qty; laba += it.laba_kotor })
     totalQty += qty; totalLabaKotor += laba
-    return { ...s, total_qty: qty, total_laba: laba, no: i + 1 }
+    return { ...s, total_qty: qty, total_laba: laba, no: i + 1, trueDiscount }
   })
 
   const printDate = new Intl.DateTimeFormat('id-ID', { dateStyle: 'full', timeStyle: 'short', timeZone: 'Asia/Jakarta' }).format(now)
@@ -110,8 +111,8 @@ export async function GET(req: NextRequest) {
       <td class="mono">${r.kode_penjualan}</td>
       <td>${r.customer_name || '—'}</td>
       <td class="center">${r.total_qty}</td>
-      <td class="right">${formatRp(r.total + (r.discount || 0))}</td>
-      <td class="right red">${r.discount ? formatRp(r.discount) : '—'}</td>
+      <td class="right">${formatRp(r.total + r.trueDiscount)}</td>
+      <td class="right red">${r.trueDiscount ? formatRp(r.trueDiscount) : '—'}</td>
       <td class="right bold">${formatRp(r.total)}</td>
       <td class="right green">${formatRp(r.total_laba)}</td>
       <td class="center">${getPaymentDisplay(r.payment_method, r.keterangan)}</td>

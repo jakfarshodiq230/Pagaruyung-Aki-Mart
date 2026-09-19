@@ -103,6 +103,24 @@ export function RiwayatPenjualanTable({ sales, role }: { sales: any[], role?: st
               // @ts-ignore
               const accountName: string | null = s.accounts?.name ?? null
 
+              // Calculate display values for the table row
+              let calculatedDiscount = 0;
+              let calculatedSubtotal = 0;
+              let totalItemDiscount = 0;
+              
+              s.sale_items?.forEach((it: any) => {
+                const itemDisc = (it.qty * it.harga_jual) - it.subtotal;
+                totalItemDiscount += itemDisc;
+                if (itemDisc > 0) calculatedDiscount += itemDisc;
+                calculatedSubtotal += itemDisc < 0 ? it.subtotal : (it.qty * it.harga_jual);
+              });
+              if (s.include_air_aki && s.jumlah_air_aki) {
+                calculatedSubtotal += s.jumlah_air_aki * (s.harga_jual_air_aki ?? s.harga_air_aki ?? 0);
+              }
+              const globalDisc = (s.discount || 0) - totalItemDiscount;
+              if (globalDisc > 0) calculatedDiscount += globalDisc;
+              else if (globalDisc < 0) calculatedSubtotal += Math.abs(globalDisc);
+
               return (
                 <tr
                   key={s.id}
@@ -121,8 +139,8 @@ export function RiwayatPenjualanTable({ sales, role }: { sales: any[], role?: st
                   <td className="px-4 py-3 text-gray-600">{getBestDateForDisplay(s.tanggal, s.created_at)}</td>
                   <td className="px-4 py-3 text-gray-600">{s.customer_name ?? '—'}</td>
                   <td className="px-4 py-3 text-center font-medium text-gray-900">{qtyItems}</td>
-                  <td className="px-4 py-3 text-right text-gray-700">{formatRupiah(s.subtotal)}</td>
-                  <td className="px-4 py-3 text-right text-gray-500">{formatRupiah(s.discount)}</td>
+                  <td className="px-4 py-3 text-right text-gray-700">{formatRupiah(calculatedSubtotal)}</td>
+                  <td className="px-4 py-3 text-right text-gray-500">{calculatedDiscount > 0 ? formatRupiah(calculatedDiscount) : '—'}</td>
                   <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatRupiah(s.total)}</td>
                   {role !== 'ADMIN' && (
                     <td className="px-4 py-3 text-right font-semibold text-green-600">{formatRupiah(labaKotor)}</td>
@@ -148,7 +166,48 @@ export function RiwayatPenjualanTable({ sales, role }: { sales: any[], role?: st
       />
 
       <Modal isOpen={!!selectedSale} onClose={() => setSelectedSale(null)} title="Detail Penjualan" size="lg">
-        {selectedSale && (
+        {selectedSale && (() => {
+          let calculatedSubtotal = 0;
+          let calculatedDiscount = 0;
+          let totalItemDiscount = 0;
+
+          const displayItems = selectedSale.sale_items?.map((item: any) => {
+            const itemDiscount = (item.qty * item.harga_jual) - item.subtotal;
+            totalItemDiscount += itemDiscount;
+            
+            let displayHargaSatuan = item.harga_jual;
+            let displaySubtotal = item.qty * item.harga_jual;
+            
+            if (itemDiscount < 0) {
+              displayHargaSatuan = item.qty > 0 ? item.subtotal / item.qty : 0;
+              displaySubtotal = item.subtotal;
+            } else {
+              calculatedDiscount += itemDiscount;
+            }
+            calculatedSubtotal += displaySubtotal;
+            
+            return {
+              ...item,
+              displayHargaSatuan,
+              displaySubtotal
+            };
+          }) || [];
+
+          let subtotalAir = 0;
+          if (selectedSale.include_air_aki && (selectedSale.jumlah_air_aki ?? 0) > 0) {
+            const qtyAir = selectedSale.jumlah_air_aki ?? 0;
+            subtotalAir = qtyAir * (selectedSale.harga_jual_air_aki ?? selectedSale.harga_air_aki ?? 0);
+            calculatedSubtotal += subtotalAir;
+          }
+
+          const globalDiscount = selectedSale.discount - totalItemDiscount;
+          if (globalDiscount > 0) {
+            calculatedDiscount += globalDiscount;
+          } else if (globalDiscount < 0) {
+            calculatedSubtotal += Math.abs(globalDiscount);
+          }
+
+          return (
           <div className="space-y-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-gray-50 p-4 rounded-xl border border-gray-100">
               <div>
@@ -186,19 +245,19 @@ export function RiwayatPenjualanTable({ sales, role }: { sales: any[], role?: st
 
             <div>
               <h4 className="font-medium text-gray-900 mb-3 border-b pb-2">Item Aki</h4>
-              {selectedSale.sale_items?.length > 0 ? (
+              {displayItems.length > 0 ? (
                 <div className="space-y-3">
-                  {selectedSale.sale_items.map((item: any, index: number) => {
+                  {displayItems.map((item: any, index: number) => {
                     const product = item.products
                     const name = product ? `${product.merk} ${product.kategori !== 'Air Aki' ? `${product.kategori}${product.type ? ' ' + product.type : ''}${product.kode_baterai ? ' ' + product.kode_baterai : ''} ${product.kapasitas_ah}AH` : ''}` : 'Produk tidak ditemukan'
                     return (
                       <div key={index} className="flex justify-between items-center bg-white p-3 rounded-lg border border-gray-100 shadow-sm">
                         <div className="flex-1">
                           <p className="font-medium text-gray-900">{name}</p>
-                          <p className="text-sm text-gray-500">{item.qty} x {formatRupiah(item.qty > 0 ? item.subtotal / item.qty : 0)}</p>
+                          <p className="text-sm text-gray-500">{item.qty} x {formatRupiah(item.displayHargaSatuan)}</p>
                         </div>
                         <div className="text-right">
-                          <p className="font-semibold text-gray-900">{formatRupiah(item.subtotal)}</p>
+                          <p className="font-semibold text-gray-900">{formatRupiah(item.displaySubtotal)}</p>
                         </div>
                       </div>
                     )
@@ -209,16 +268,16 @@ export function RiwayatPenjualanTable({ sales, role }: { sales: any[], role?: st
               )}
             </div>
 
-            {selectedSale.include_air_aki && (
+            {selectedSale.include_air_aki && (selectedSale.jumlah_air_aki ?? 0) > 0 && (
               <div>
                 <h4 className="font-medium text-gray-900 mb-3 border-b pb-2">Air Aki</h4>
                 <div className="flex justify-between items-center bg-white p-3 rounded-lg border border-gray-100 shadow-sm">
                   <div className="flex-1">
                     <p className="font-medium text-gray-900">Air Aki (Tambahan)</p>
-                    <p className="text-sm text-gray-500">{selectedSale.jumlah_air_aki} x {formatRupiah(selectedSale.harga_air_aki)}</p>
+                    <p className="text-sm text-gray-500">{selectedSale.jumlah_air_aki} x {formatRupiah(subtotalAir / (selectedSale.jumlah_air_aki || 1))}</p>
                   </div>
                   <div className="text-right">
-                    <p className="font-semibold text-gray-900">{formatRupiah(selectedSale.jumlah_air_aki * selectedSale.harga_air_aki)}</p>
+                    <p className="font-semibold text-gray-900">{formatRupiah(subtotalAir)}</p>
                   </div>
                 </div>
               </div>
@@ -227,12 +286,14 @@ export function RiwayatPenjualanTable({ sales, role }: { sales: any[], role?: st
             <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 space-y-2">
               <div className="flex justify-between text-sm text-gray-600">
                 <span>Subtotal</span>
-                <span>{formatRupiah(selectedSale.subtotal)}</span>
+                <span>{formatRupiah(calculatedSubtotal)}</span>
               </div>
-              <div className="flex justify-between text-sm text-gray-600">
-                <span>Diskon</span>
-                <span className="text-red-500">- {formatRupiah(selectedSale.discount)}</span>
-              </div>
+              {calculatedDiscount > 0 && (
+                <div className="flex justify-between text-sm text-gray-600">
+                  <span>Diskon</span>
+                  <span className="text-red-500">- {formatRupiah(calculatedDiscount)}</span>
+                </div>
+              )}
               <div className="flex justify-between font-semibold text-gray-900 pt-2 border-t border-gray-200 mt-2">
                 <span>Total</span>
                 <span className="text-lg">{formatRupiah(selectedSale.total)}</span>
@@ -334,7 +395,8 @@ export function RiwayatPenjualanTable({ sales, role }: { sales: any[], role?: st
               </div>
             )}
           </div>
-        )}
+          )
+        })()}
       </Modal>
 
       {/* Faktur Modal */}
